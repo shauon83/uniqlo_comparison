@@ -48,6 +48,9 @@ def item_info(store, it, gender, klass):
             "base": base, "sale": promo if promo is not None else base, "image": img,
             "rating": (it.get("rating") or {}).get("average"), "reviews": (it.get("rating") or {}).get("count"),
             "flags": [f for f in flags if f],
+            # color codes repeat names (11 PINK, 12 PINK), so colors keep their code; sizes are unique by name
+            "colors": [[c["displayCode"], c.get("name", "")] for c in it.get("colors") or [] if (c.get("display") or {}).get("showFlag", True)],
+            "sizes": [s["name"] for s in it.get("sizes") or [] if (s.get("display") or {}).get("showFlag", True)],
             "url": f"https://www.uniqlo.com/{store}/{lang}/products/{it['productId']}/{it.get('priceGroup', '00')}"}
 
 
@@ -146,6 +149,7 @@ def build(jp, kr):
             "kr_price": k["base"] if k else None, "kr_sale_price": k["sale"] if k else None,
             "kr_link": k["url"] if k else None, "kr_flags": k["flags"] if k else [],
             "rating": j["rating"], "reviews": j["reviews"], "is_jp_exclusive": k is None,
+            "colors": j.get("colors", []), "sizes": j.get("sizes", []),
             "kr_id": kid if k else None, "match": ("code" if pid in code_match else "reviewed") if k else None,
         })
     return [p for p in products if p["jp_price"]]

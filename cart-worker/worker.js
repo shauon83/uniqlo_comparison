@@ -1,7 +1,7 @@
 // Relay between the public page and carts.json on the repo's "carts" branch.
 // The GitHub token lives only here (wrangler secret), never in the page.
 const MAX_ID = 40, MAX_ITEMS = 200, MAX_QTY = 99, MAX_ENTRIES = 2000, MAX_BYTES = 900_000;
-const PID = /^E\d{6}-\d{3}$/;
+const PID = /^E\d{6}-\d{3}$/, COLOR = /^(\d{2,3})?$/, MAX_SIZE = 20;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -21,7 +21,10 @@ export function cleanItems(items) {
   const out = [];
   for (const it of items) {
     if (!it || typeof it.id !== "string" || !PID.test(it.id) || !Number.isInteger(it.qty) || it.qty < 1 || it.qty > MAX_QTY) return null;
-    out.push({ id: it.id, qty: it.qty });
+    // color/size are optional (older carts have none); "" means not chosen yet
+    const color = it.color ?? "", size = it.size ?? "";
+    if (typeof color !== "string" || !COLOR.test(color) || typeof size !== "string" || size.length > MAX_SIZE) return null;
+    out.push({ id: it.id, qty: it.qty, color, size });
   }
   return out;
 }
