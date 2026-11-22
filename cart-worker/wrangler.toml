@@ -1,0 +1,9 @@
+name = "uniqlo-cart"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+REPO = "shauon83/uniqlo_comparison"
+BRANCH = "carts"
+FILE = "carts.json"
+# GITHUB_TOKEN is a secret: npx wrangler secret put GITHUB_TOKEN

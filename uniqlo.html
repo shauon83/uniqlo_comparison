@@ -125,28 +125,21 @@
     <div id="cart-summary" class="border-t border-neutral-200 bg-neutral-50 px-4 py-3 text-sm space-y-1"></div>
     <div class="grid grid-cols-3 gap-2 p-4 text-xs font-bold">
       <button id="cart-save" class="bg-black text-white py-2 hover:bg-[#E60012]">파일로 저장</button>
-      <label class="border border-black text-center py-2 cursor-pointer hover:bg-neutral-100">불러오기
+      <label class="border border-black text-center py-2 cursor-pointer hover:bg-neutral-100">파일 불러오기
         <input id="cart-load" type="file" accept=".json,application/json" class="sr-only">
       </label>
       <button id="cart-clear" class="border border-neutral-300 text-neutral-500 py-2 hover:border-black">비우기</button>
     </div>
     <div class="border-t border-neutral-200 px-4 py-3 space-y-3 text-xs">
-      <form id="share-form" class="space-y-1">
-        <label for="share-name" class="font-bold block">이름(아이디)을 적고 GitHub에 저장</label>
+      <form id="remote-form" class="space-y-1">
+        <label for="remote-id" class="font-bold block">아이디로 저장 · 불러오기</label>
         <div class="flex gap-2">
-          <input id="share-name" required maxlength="40" class="flex-1 border border-neutral-300 px-2 py-2" placeholder="예: 성은">
-          <button class="bg-black text-white font-bold px-3 hover:bg-[#E60012]">GitHub에 저장</button>
+          <input id="remote-id" required maxlength="40" autocomplete="username" class="flex-1 min-w-0 border border-neutral-300 px-2 py-2" placeholder="나만 아는 아이디">
+          <button type="button" data-remote="save" class="bg-black text-white font-bold px-3 hover:bg-[#E60012]">저장</button>
+          <button data-remote="load" class="border border-black font-bold px-3 hover:bg-neutral-100">불러오기</button>
         </div>
-        <p class="text-neutral-500">GitHub 로그인 후 열리는 페이지에서 <b>Submit new issue</b>를 눌러야 저장됩니다. 저장한 리스트는 누구나 볼 수 있습니다.</p>
+        <p id="remote-msg" class="text-neutral-500" aria-live="polite">아이디를 기억해야 다시 불러올 수 있습니다. 같은 아이디로 저장하면 이전 리스트를 덮어씁니다. 남이 짐작하기 어려운 아이디를 쓰세요.</p>
       </form>
-      <form id="find-form" class="space-y-1">
-        <label for="find-name" class="font-bold block">저장된 장바구니 찾기</label>
-        <div class="flex gap-2">
-          <input id="find-name" maxlength="40" class="flex-1 border border-neutral-300 px-2 py-2" placeholder="이름 또는 GitHub 아이디 (비우면 최근 목록)">
-          <button class="border border-black font-bold px-3 hover:bg-neutral-100">검색</button>
-        </div>
-      </form>
-      <ul id="find-results" class="max-h-48 overflow-y-auto divide-y divide-neutral-200" aria-live="polite"></ul>
     </div>
   </aside>
 </div>
@@ -288,41 +281,25 @@ function saveCart() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Shared carts live as GitHub Issues titled "[cart] <name>": a static page can't hold a write token safely,
-// so saving opens GitHub's prefilled new-issue form (needs a GitHub login); reading uses the public API.
-const REPO = "shauon83/uniqlo_comparison", CART_TAG = "[cart] ";
-let found = [];
+// Carts saved by ID go through a Cloudflare Worker (cart-worker/) that writes carts.json on the repo's "carts" branch;
+// the GitHub token lives only in the worker.
+const CART_API = "https://uniqlo-cart.cart-worker.workers.dev";
 
-function shareCart(name) {
-  if (!cart.size) return alert("장바구니가 비어 있습니다.");
-  const data = cartData();
-  const list = data.items.map((it) => `- ${it.name} × ${it.qty} (${it.id})`).join("\n");
-  const body = `${list}\n\n<!-- 아래 데이터는 페이지에서 불러오기에 쓰입니다. 수정하지 마세요 -->\n\`\`\`json\n${JSON.stringify(data)}\n\`\`\``;
-  const url = `https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: CART_TAG + name, body });
-  if (url.length > 8000) return alert("담은 상품이 너무 많아 GitHub에 한 번에 저장할 수 없습니다. 파일로 저장을 이용해 주세요.");
-  window.open(url, "_blank", "noopener");
-}
-
-async function findCarts(q) {
-  const ul = $("#find-results");
-  ul.innerHTML = `<li class="py-2 text-neutral-500">불러오는 중…</li>`;
+async function remoteCart(action, id) {
+  const msg = $("#remote-msg");
+  if (action === "save" && !cart.size) return alert("장바구니가 비어 있습니다.");
+  msg.textContent = action === "save" ? "저장하는 중…" : "불러오는 중…";
   try {
-    // shortcut: only the newest 100 open issues are searched; page through (or use the Search API) once there are more
-    const r = await fetch(`https://api.github.com/repos/${REPO}/issues?state=open&per_page=100`, { headers: { Accept: "application/vnd.github+json" } });
-    if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? "GitHub 조회 한도를 넘었습니다. 잠시 후 다시 시도해 주세요." : `GitHub 응답 오류 (${r.status})`);
-    q = q.trim().toLowerCase();
-    found = (await r.json())
-      .filter((i) => !i.pull_request && i.title.startsWith(CART_TAG))
-      .map((i) => ({ name: i.title.slice(CART_TAG.length).trim(), login: i.user?.login || "", date: i.created_at.slice(0, 10), url: i.html_url,
-                     json: (i.body || "").match(/```json\s*([\s\S]*?)```/)?.[1] || "" }))
-      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.login.toLowerCase().includes(q));
-    ul.innerHTML = found.length ? found.map((c, n) => `<li class="py-2 flex items-center gap-2">
-        <div class="flex-1 min-w-0"><b>${esc(c.name)}</b> <span class="text-neutral-500">@${esc(c.login)} · ${esc(c.date)}</span></div>
-        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="underline text-neutral-500">보기</a>
-        <button data-found="${n}" class="border border-black px-2 py-1 font-bold hover:bg-neutral-100">불러오기</button>
-      </li>`).join("") : `<li class="py-2 text-neutral-500">저장된 장바구니가 없습니다.</li>`;
+    const r = action === "save"
+      ? await fetch(CART_API + "/save", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, items: [...cart].map(([pid, qty]) => ({ id: pid, qty })) }) })
+      : await fetch(CART_API + "/load?" + new URLSearchParams({ id }));
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `서버 오류 (${r.status})`);
+    if (action === "save") msg.textContent = `저장했습니다. 아이디 "${id}"로 어느 기기에서든 불러올 수 있습니다.`;
+    else msg.textContent = (await loadCart(JSON.stringify(d))) ? `불러왔습니다. (${String(d.saved_at).slice(0, 10)} 저장)` : "불러오기를 취소했습니다.";
   } catch (e) {
-    ul.innerHTML = `<li class="py-2 red">${esc(e.message === "Failed to fetch" ? "GitHub에 연결할 수 없습니다." : e.message)}</li>`;
+    msg.textContent = e.message === "Failed to fetch" ? "서버에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요." : e.message;
   }
 }
 
@@ -335,6 +312,7 @@ async function loadCart(text) {
     items.forEach((q, id) => cart.set(id, q));
     render();
     if (skipped) alert(`${skipped}개 항목은 현재 판매 목록에 없거나 수량이 잘못되어 제외했습니다.`);
+    return true;
   } catch (e) {
     alert("불러오기 실패: " + (e instanceof SyntaxError ? "JSON 파일이 아닙니다." : e.message));
   }
@@ -488,9 +466,9 @@ $("#cart").addEventListener("click", (e) => { if (e.target.closest("[data-close]
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") openCart(false); });
 $("#cart-save").addEventListener("click", saveCart);
 $("#cart-load").addEventListener("change", async (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadCart(await f.text()); });
-$("#share-form").addEventListener("submit", (e) => { e.preventDefault(); shareCart($("#share-name").value.trim()); });
-$("#find-form").addEventListener("submit", (e) => { e.preventDefault(); findCarts($("#find-name").value); });
-$("#find-results").addEventListener("click", (e) => { const b = e.target.closest("[data-found]"); if (b) loadCart(found[b.dataset.found].json); });
+// Enter = load, so a typo'd Enter never overwrites a saved list
+$("#remote-form").addEventListener("submit", (e) => { e.preventDefault(); remoteCart("load", $("#remote-id").value.trim()); });
+$("[data-remote=save]").addEventListener("click", () => { if ($("#remote-form").reportValidity()) remoteCart("save", $("#remote-id").value.trim()); });
 $("#cart-clear").addEventListener("click", () => { if (cart.size && confirm("장바구니를 비울까요?")) { cart.clear(); render(); } });
 $("#more").addEventListener("click", () => { state.limit += PAGE; render(); });
 

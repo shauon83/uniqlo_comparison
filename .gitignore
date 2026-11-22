@@ -1,3 +1,5 @@
 __pycache__/
 match_candidates.tsv
 uniqlo_imghash.json
+cart-worker/.wrangler/
+cart-worker/node_modules/
