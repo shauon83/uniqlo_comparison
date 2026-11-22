@@ -124,6 +124,7 @@ def suggest(jp, kr, reviewed):
 
 
 MATCHES = HERE / "uniqlo_matches.json"
+NAMES_KR = HERE / "uniqlo_names_kr.json"
 
 
 def build(jp, kr):
@@ -131,12 +132,14 @@ def build(jp, kr):
     reviewed = json.loads(MATCHES.read_text(encoding="utf-8"))["pairs"] if MATCHES.exists() else {}
     reviewed = {a: b for a, b in reviewed.items() if a in jp and b in kr and a not in code_match}
     print(f"matched by code {len(code_match)}, by reviewed name/photo {len(reviewed)}")
+    # Korean translations for JP-only names (JP productId -> name); new items stay untranslated until added
+    names_kr = json.loads(NAMES_KR.read_text(encoding="utf-8")) if NAMES_KR.exists() else {}
     products = []
     for pid, j in jp.items():
         kid = code_match.get(pid) or reviewed.get(pid)
         k = kr.get(kid) if kid else None
         products.append({
-            "id": pid, "name_jp": j["name"], "name_kr": k["name"] if k else "",
+            "id": pid, "name_jp": j["name"], "name_kr": k["name"] if k else names_kr.get(pid, ""),
             "gender": j["gender"], "class_jp": j["class"], "class_kr": k["class"] if k else "",
             "image": j["image"] or (k or {}).get("image", ""),
             "jp_price": j["base"], "jp_sale_price": j["sale"], "jp_link": j["url"], "jp_flags": j["flags"],
